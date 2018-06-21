@@ -34,9 +34,9 @@ def FindDirectories(mr_dir):
         # find T2fat dicom dir
         T2dir = [string for string in dcm_dirs if 'T2fat' in string][-1]
         # find pre contrast dir
-        pre_dir = [string for string in dcm_dirs if 'Pre Ax3d' in string][-1]
+        pre_dir = [string for string in dcm_dirs if 'Pre Ax3d' in string and not 'RECON' in string][-1]
         # find post-contrast dir
-        post_dir = [string for string in dcm_dirs if 'Dur Ax3d' in string][-1]
+        post_dir = [string for string in dcm_dirs if 'Dur Ax3d' in string and not 'RECON' in string][-1]
     except IndexError as e:
         T2dir = False
         pre_dir = False
@@ -81,6 +81,12 @@ def LoadDicomDir(directory):
         return_ims = np.stack((phase1,phase2,phase3,phase4),axis=-1)
     else:
         return_ims = ims[...,np.newaxis]
+        
+        
+    # find extrema
+    zmin = np.min(np.array(locs))
+    zmax = np.max(np.array(locs))
+    
     return return_ims.astype(np.float)
 
 # get list of subject directories, sorted by number
@@ -105,26 +111,23 @@ for subj in range(0,len(mr_dirs)):
         pre_ims = LoadDicomDir(pre_dir)
         post_ims = LoadDicomDir(post_dir)
         # normalize
-        pre_ims /= np.max(pre_ims)
-        post_ims /= np.max(post_ims)
-        try:
-            comb_ims = np.concatenate((pre_ims,post_ims),axis=-1)
+        nonfat_ims /= np.max(pre_ims)
+        dyn_ims /= np.max(post_ims)
         
-            # register T2 to others
-            #T2_img = ants.from_numpy(T2_ims[...,0].astype(np.float))
-            #T2_img_resamp = T2_img.resample_image((124,512,512),use_voxels=True,interp_type=0)
-            #pre_img = ants.from_numpy(pre_ims[...,0].astype(np.float))
-            #T2_tx = ants.registration(fixed=pre_img,moving=T2_img,type_of_transform='Similarity',aff_metric='mattes')
-            #reg_T2 = T2_tx['warpedmovout']
-            #T2_ims_reg = reg_T2.numpy()[...,np.newaxis]
-            #import ants
+        # register T2 to others
+        #T2_img = ants.from_numpy(T2_ims[...,0].astype(np.float))
+        #T2_img_resamp = T2_img.resample_image((124,512,512),use_voxels=True,interp_type=0)
+        #pre_img = ants.from_numpy(pre_ims[...,0].astype(np.float))
+        #T2_tx = ants.registration(fixed=pre_img,moving=T2_img,type_of_transform='Similarity',aff_metric='mattes')
+        #reg_T2 = T2_tx['warpedmovout']
+        #T2_ims_reg = reg_T2.numpy()[...,np.newaxis]
+        #import ants
+        
+        # export to .hdf5 file
+        savepath = output_path.format(cur_subj)
+        with h5py.File(savepath, 'w') as hf:
+            hf.create_dataset("nonfat_images",  data=pre_ims,dtype='f')
+            hf.create_dataset("dyn_images", data=dyn_ims,dtype='f')
             
-            # export to .hdf5 file
-            savepath = output_path.format(cur_subj)
-            with h5py.File(savepath, 'w') as hf:
-                hf.create_dataset("images",  data=comb_ims,dtype='f')
-        except ValueError as e:
-            print('image size mismatch')
-            print('skipping...')
 
 print('Done')

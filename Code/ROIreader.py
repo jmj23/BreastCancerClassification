@@ -10,6 +10,7 @@ import pydicom as dcm
 import glob
 import numpy as np
 import os
+from natsort import natsorted
 isilon_dir = os.path.expanduser('~/r-fcb-isilon')
 
 ROIdir = os.path.join(isilon_dir,'groups/StrigelGroup/BreastCancerClassification/ROIs/*RTSS')
@@ -28,7 +29,7 @@ def ExtractCoords(contour):
 
 
 
-roifiles = glob.glob(ROIdir)
+roifiles = natsorted(glob.glob(ROIdir))
 
 cur_fp = roifiles[0]
 # get file name
@@ -41,11 +42,6 @@ contour_seq = roi_data.ROIContourSequence[0].ContourSequence
 coord_array = np.array([ExtractCoords(cont) for cont in contour_seq])
 coord_array = coord_array[coord_array[:,0].argsort()]
 
-
-ROIlist = []
-for file in roifiles:
-    roi = dcm.read_file(file)
-    ROIlist.append(roi)
 
 # Want to convert each of these ROIs into lists of 4x3 array 
 # of x,y,slice coordinates in pixel space, i.e.
