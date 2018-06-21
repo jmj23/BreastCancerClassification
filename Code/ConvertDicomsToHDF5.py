@@ -91,7 +91,7 @@ mr_dirs = [os.path.join(dir,'MR') for dir in subj_dirs]
 
 # loop over all subjects
 sag_subjs = []
-for subj in range(333,len(mr_dirs)):
+for subj in range(0,len(mr_dirs)):
     # current directory
     cur_dir = mr_dirs[subj]
     cur_subj = subj_nums[subj]
