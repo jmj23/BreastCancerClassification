@@ -10,16 +10,40 @@ import pydicom as dcm
 import glob
 import numpy as np
 import os
+isilon_dir = os.path.expanduser('~/r-fcb-isilon')
 
-ROIdir = '~/r-fcb-isilon/groups/StrigelGroup/BreastCancerClassification/ROIs/{}'
+ROIdir = os.path.join(isilon_dir,'groups/StrigelGroup/BreastCancerClassification/ROIs/*RTSS')
 
-globfiles = glob.glob('../ROIs/*RTSS')
-FNs = [os.path.split(file)[1] for file in globfiles]
-FPs = [ROIdir.format(fn) for fn in FNs]
+
+# extract coordinates from a contour
+def ExtractCoords(contour):
+    contour_data = np.array([float(dat) for dat in contour.ContourData])
+    contour_array = np.reshape(contour_data,(-1,3))
+    z = contour_array[0,2]
+    xmin = np.min(contour_array[:,0])
+    xmax = np.max(contour_array[:,0])
+    ymin = np.min(contour_array[:,1])
+    ymax = np.max(contour_array[:,1])
+    return [z,xmin,xmax,ymin,ymax]
+
+
+
+roifiles = glob.glob(ROIdir)
+
+cur_fp = roifiles[0]
+# get file name
+_,cur_fn = os.path.split(cur_fp)
+# get subject number
+subj_num = cur_fn[8:11]
+# get ROI data
+roi_data = dcm.read_file(cur_fp)
+contour_seq = roi_data.ROIContourSequence[0].ContourSequence
+coord_array = np.array([ExtractCoords(cont) for cont in contour_seq])
+coord_array = coord_array[coord_array[:,0].argsort()]
 
 
 ROIlist = []
-for file in FPs:
+for file in roifiles:
     roi = dcm.read_file(file)
     ROIlist.append(roi)
 
@@ -37,7 +61,8 @@ for file in FPs:
 # to be able to match them with images
 # Finally, a tag for B/M
     
-# To be run on each ROI on each slice
+
+
 def ConvertROI(roi):
     fields = roi.desired_fields
     coords = np.array([fields[0],fields[1]]) # create array described above
