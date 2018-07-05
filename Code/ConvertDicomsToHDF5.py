@@ -43,6 +43,22 @@ def FindDirectories(mr_dir):
         post_dir = False
     return T2dir,pre_dir,post_dir
 
+# function for creating transformation matrix
+def CreateTmatrix(info):
+    x_basis = info.ImageOrientationPatient[:3]
+    x_basis = np.array([int(s) for s in x_basis])
+    y_basis = info.ImageOrientationPatient[3:6]
+    y_basis = np.array([int(s) for s in y_basis])
+    z_basis = np.cross(x_basis,y_basis)
+    delta_i = float(info.PixelSpacing[0])
+    delta_j = float(info.PixelSpacing[1])
+    delta_k = float(info.SpacingBetweenSlices)
+    origin = info.ImagePositionPatient
+    origin = np.array([float(s) for s in origin])
+    tmat = np.c_[x_basis*delta_i,y_basis*delta_j,z_basis*delta_k,origin]
+    tmat = np.vstack((tmat,np.array([0,0,0,1])))
+    return tmat
+
 # Function for loading in dicoms from a given directory
 def LoadDicomDir(directory):
     # get file list
@@ -78,16 +94,20 @@ def LoadDicomDir(directory):
     ims = np.rollaxis(ims,2,0)
     if post_con:
         phase1,phase2,phase3,phase4 = np.split(ims,4)
-        return_ims = np.stack((phase1,phase2,phase3,phase4),axis=-1)
+        return_ims = np.stack((phase1,phase2,phase3,phase4),axis=-1).astype(np.float)
     else:
-        return_ims = ims[...,np.newaxis]
+        return_ims = ims[...,np.newaxis].astype(np.float)
         
         
-    # find extrema
+    # find slice extrema
     zmin = np.min(np.array(locs))
     zmax = np.max(np.array(locs))
+    zrange = np.array([zmin,zmax])
     
-    return return_ims.astype(np.float)
+    # create transformation matrix
+    tMat = CreateTmatrix(RefDs)
+    
+    return return_ims,zrange,tMat
 
 # get list of subject directories, sorted by number
 subj_dirs = natsorted(glob.glob(os.path.join(base_path, "*", "")))
@@ -108,11 +128,9 @@ for subj in range(0,len(mr_dirs)):
     else:
         print('Processing subject',cur_subj,'...')
         #T2_ims = LoadDicomDir(T2dir)
-        pre_ims = LoadDicomDir(pre_dir)
-        post_ims = LoadDicomDir(post_dir)
-        # normalize
-        nonfat_ims /= np.max(pre_ims)
-        dyn_ims /= np.max(post_ims)
+        nonfat_ims,nonfat_zrange,nonfat_tmat = LoadDicomDir(pre_dir)
+        dyn_ims, dyn_zrange,dyn_tmat = LoadDicomDir(post_dir)
+
         
         # register T2 to others
         #T2_img = ants.from_numpy(T2_ims[...,0].astype(np.float))
@@ -126,8 +144,11 @@ for subj in range(0,len(mr_dirs)):
         # export to .hdf5 file
         savepath = output_path.format(cur_subj)
         with h5py.File(savepath, 'w') as hf:
-            hf.create_dataset("nonfat_images",  data=pre_ims,dtype='f')
+            hf.create_dataset("nonfat_images",  data=nonfat_ims, dtype='f')
+            hf.create_dataset("nonfat_zrange", data=nonfat_zrange, dtype='f')
+            hf.create_dataset("nonfat_tmat", data=nonfat_tmat, dtype='f')
             hf.create_dataset("dyn_images", data=dyn_ims,dtype='f')
-            
+            hf.create_dataset("dyn_zrange", data=dyn_zrange, dtype='f')
+            hf.create_dataset("dyn_tmat", data=dyn_tmat, dtype='f')
 
 print('Done')
