@@ -65,18 +65,21 @@ subjs = np.unique([int(fp[86:89]) for fp in roifiles])
 
 # ~loop over subjects~
 # current subject
-cur_subj = subjs[2]
-# get all files
+cur_subj = subjs[-6]
+print('Processing subject',cur_subj)
+# get all file paths
 cur_roi_files = glob.glob(gen_ROI_dir.format(cur_subj))
 # get subject number
 subj_num = os.path.split(cur_roi_files[0])[1][8:11]
 
 # load in images and transform data
+print('Loading images...')
 nonfat,dyn = LoadImageData(subj_num)
 if not np.array_equal(dyn[0].shape[:3],nonfat[0].shape[:3]):
     raise ValueError('Images are not equal size')
     
 # rescale images
+print('Resizing images...')
 nonfat_ims = np.zeros((nonfat[0].shape[0],im_reshape[0],im_reshape[1],nonfat[0].shape[-1]))
 dyn_ims = np.zeros((dyn[0].shape[0],im_reshape[0],im_reshape[1],dyn[0].shape[-1]))
 for ii in range(nonfat_ims.shape[0]):
@@ -85,6 +88,7 @@ for ii in range(nonfat_ims.shape[0]):
         dyn_ims[ii,...,cc] = cv2.resize(dyn[0][ii,:,:,cc],im_reshape)
     
 # normalize and combine images
+print('Normalizing images...')
 for im in nonfat_ims:
     im /= np.max(im)
 for im in dyn_ims:
@@ -97,7 +101,7 @@ comb_ims = np.concatenate((nonfat_ims,dyn_ims),axis=-1)
 # sets of [x1,y1,x2,y2,bm] and zeros, depending on the number
 # of ROIs on that are contained on that slice
 coord_array = np.zeros((comb_ims.shape[0],20))
-
+print('Processing ROIs')
 # ~loop over ROIs~
 for roi_num in range(len(cur_roi_files)):
     # current ROI
@@ -117,16 +121,16 @@ for roi_num in range(len(cur_roi_files)):
     # convert coordinates
     tmat = nonfat[2]
     img_coords = [ConvertCoords(tmat,c) for c in all_coords]
-    zs = all_coords[:-1,0]
-    img_zs = np.ceil((zs-nonfat[1][0])/(nonfat[1][1]-nonfat[1][0])*nonfat[0].shape[0]).astype(np.int)
-    img_zs = img_zs[:-1]
+    zrange = np.array([np.min(all_coords[:,0]),np.max(all_coords[:,0])])
+    img_zrange = np.ceil((zrange-nonfat[1][0])/(nonfat[1][1]-nonfat[1][0])*nonfat[0].shape[0]).astype(np.int)
+    img_zs = np.arange(img_zrange[0],img_zrange[1],dtype=np.int)
     # coordinates in the form of [x1,y1,x2,y2]
     coords = np.r_[img_coords[0][1][:2],img_coords[0][0][:2]]
     
-    # transform coordinates
+    # transform coordinates to reshaped images
     mult = nonfat[0].shape[1]/im_reshape[0]
     coords /= mult
-    # add m/b: 1 is benign, 2 is malignant
+    # add m/b to end: 1 is benign, 2 is malignant
     coords = np.r_[coords,np.float(is_malignant)+1]
     # add to coordinate array
     for ss in range(img_zs.shape[0]):
