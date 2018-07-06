@@ -17,6 +17,7 @@ from VisTools import MultiROIviewer
 from natsort import natsorted
 import cv2
 
+#%% Parameters and functions
 im_reshape = (384,384)
 
 isilon_dir = os.path.expanduser('~/r-fcb-isilon')
@@ -25,6 +26,10 @@ ROIdir = os.path.join(isilon_dir,'groups/StrigelGroup/BreastCancerClassification
 gen_ROI_dir = os.path.join(isilon_dir,'groups/StrigelGroup/BreastCancerClassification/ROIs/RMRLHBLC{:03d}*')
 image_path = os.path.join(isilon_dir,'groups','StrigelGroup','BreastCancerClassification',
                           'RawHDF5','subj_{}.hdf5')
+output_image_path = os.path.join(isilon_dir,'groups','StrigelGroup','BreastCancerClassification',
+                          'ProcessedData','{:03d}{}{:03d}.npy')
+output_label_path = os.path.join(isilon_dir,'groups','StrigelGroup','BreastCancerClassification',
+                          'ProcessedData','{:03d}{}{:03d}.txt')
 
 
 # extract coordinates from a contour
@@ -58,14 +63,61 @@ def ConvertCoords(tmat,coord):
     coord2 = np.linalg.solve(tmat,xyz2)[:-1]
     return coord1,coord2
 
-# all roi files
+def ProcessROIs(cur_roi_files,nonfat):
+    # coordinates are stored in form [slice,coords]
+    # where coords is a vector length 20 that contains
+    # sets of [x1,y1,x2,y2,b/m] and zeros, depending on the number
+    # of ROIs on that are contained on that slice
+    
+    # preallocate coordinate array for this subject
+    coord_array = np.zeros((comb_ims.shape[0],20))
+    # ~loop over ROIs~
+    for roi_num in range(len(cur_roi_files)):
+        # current ROI
+        cur_fp = cur_roi_files[roi_num]
+        
+        # get ROI data
+        roi_data = dcm.read_file(cur_fp)
+        contour_seq = roi_data.ROIContourSequence[0].ContourSequence
+        if len(roi_data.ROIContourSequence)>1:
+            raise ValueError('More than 1 contour sequence')
+        all_coords = np.array([ExtractCoords(cont) for cont in contour_seq])
+        all_coords = all_coords[all_coords[:,0].argsort()]
+        
+        # benign/malignant
+        is_malignant = roi_data.StructureSetLabel=='m'
+        
+        # convert coordinates
+        tmat = nonfat[2]
+        img_coords = [ConvertCoords(tmat,c) for c in all_coords]
+        zrange = np.array([np.min(all_coords[:,0]),np.max(all_coords[:,0])])
+        img_zrange = np.ceil((zrange-nonfat[1][0])/(nonfat[1][1]-nonfat[1][0])*nonfat[0].shape[0]).astype(np.int)
+        img_zs = np.arange(img_zrange[0],img_zrange[1],dtype=np.int)
+        # coordinates in the form of [x1,y1,x2,y2]
+        coords = np.r_[img_coords[0][1][:2],img_coords[0][0][:2]]
+        
+        # transform coordinates to reshaped images
+        mult = nonfat[0].shape[1]/im_reshape[0]
+        coords /= mult
+        # add m/b to end: 1 is benign, 2 is malignant
+        coords = np.r_[coords,np.float(is_malignant)+1]
+        
+        # add to coordinate array
+        for ss in range(img_zs.shape[0]):
+            coord_array[img_zs[ss],(5*roi_num):(5*roi_num+5)] = coords
+    return coord_array
+
+#%% Main body for processing
+    
+# collect all roi files
 roifiles = natsorted(glob.glob(ROIdir))
 # get list of subjects
 subjs = np.unique([int(fp[86:89]) for fp in roifiles])
 
+
 # ~loop over subjects~
 # current subject
-cur_subj = subjs[-6]
+cur_subj = subjs[-8]
 print('Processing subject',cur_subj)
 # get all file paths
 cur_roi_files = glob.glob(gen_ROI_dir.format(cur_subj))
@@ -95,45 +147,27 @@ for im in dyn_ims:
     im /= np.max(im)
 comb_ims = np.concatenate((nonfat_ims,dyn_ims),axis=-1)
 
-# preallocate coordinate array for this subject
-# coordinates are stored in form [slice,coords]
-# where coords is a vector length 20 that contains
-# sets of [x1,y1,x2,y2,bm] and zeros, depending on the number
-# of ROIs on that are contained on that slice
-coord_array = np.zeros((comb_ims.shape[0],20))
 print('Processing ROIs')
-# ~loop over ROIs~
-for roi_num in range(len(cur_roi_files)):
-    # current ROI
-    cur_fp = cur_roi_files[roi_num]
+coord_array = ProcessROIs(cur_roi_files,nonfat)
+
+print('Saving Data')
+#~ Loop over slices ~
+for ind in range(coord_array.shape[0]):
+    lbl_num = np.max(coord_array[ind,4::5])
+    if lbl_num==2:
+        lbl = 'M'
+    elif lbl_num==1:
+        lbl = 'B'
+    else:
+         lbl = 'N'
     
-    # get ROI data
-    roi_data = dcm.read_file(cur_fp)
-    contour_seq = roi_data.ROIContourSequence[0].ContourSequence
-    if len(roi_data.ROIContourSequence)>1:
-        raise ValueError('More than 1 contour sequence')
-    all_coords = np.array([ExtractCoords(cont) for cont in contour_seq])
-    all_coords = all_coords[all_coords[:,0].argsort()]
-    
-    # benign/malignant
-    is_malignant = roi_data.StructureSetLabel=='m'
-    
-    # convert coordinates
-    tmat = nonfat[2]
-    img_coords = [ConvertCoords(tmat,c) for c in all_coords]
-    zrange = np.array([np.min(all_coords[:,0]),np.max(all_coords[:,0])])
-    img_zrange = np.ceil((zrange-nonfat[1][0])/(nonfat[1][1]-nonfat[1][0])*nonfat[0].shape[0]).astype(np.int)
-    img_zs = np.arange(img_zrange[0],img_zrange[1],dtype=np.int)
-    # coordinates in the form of [x1,y1,x2,y2]
-    coords = np.r_[img_coords[0][1][:2],img_coords[0][0][:2]]
-    
-    # transform coordinates to reshaped images
-    mult = nonfat[0].shape[1]/im_reshape[0]
-    coords /= mult
-    # add m/b to end: 1 is benign, 2 is malignant
-    coords = np.r_[coords,np.float(is_malignant)+1]
-    # add to coordinate array
-    for ss in range(img_zs.shape[0]):
-        coord_array[img_zs[ss],(5*roi_num):(5*roi_num+5)] = coords
-    
+    out_im_fn = output_image_path.format(cur_subj,lbl,ind)
+    out_lbl_fn = output_label_path.format(cur_subj,lbl,ind)
+    np.save(out_im_fn,comb_ims[ind])
+    np.savetxt(out_lbl_fn,coord_array[ind])
+
 MultiROIviewer(comb_ims[...,3],coord_array)
+# export to .hdf5 file
+#savepath = 'FormattedData.hdf5'
+#with h5py.File(savepath, 'w') as hf:
+#    hf.create_dataset("nonfat_images",  data=nonfat_ims, dtype='f')
