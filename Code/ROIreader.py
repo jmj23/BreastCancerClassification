@@ -13,7 +13,6 @@ import numpy as np
 import os
 import sys
 sys.path.insert(1,'/home/jmj136/deep-learning/Utils')
-from VisTools import MultiROIviewer
 from natsort import natsorted
 import cv2
 
@@ -116,58 +115,63 @@ subjs = np.unique([int(fp[86:89]) for fp in roifiles])
 
 
 # ~loop over subjects~
-# current subject
-cur_subj = subjs[-8]
-print('Processing subject',cur_subj)
-# get all file paths
-cur_roi_files = glob.glob(gen_ROI_dir.format(cur_subj))
-# get subject number
-subj_num = os.path.split(cur_roi_files[0])[1][8:11]
-
-# load in images and transform data
-print('Loading images...')
-nonfat,dyn = LoadImageData(subj_num)
-if not np.array_equal(dyn[0].shape[:3],nonfat[0].shape[:3]):
-    raise ValueError('Images are not equal size')
+for sind in range(94,len(subjs)):
+    # current subject
+    cur_subj = subjs[sind]
+    print('Processing subject',cur_subj)
+    # get all file paths
+    cur_roi_files = glob.glob(gen_ROI_dir.format(cur_subj))
+    # get subject number
+    subj_num = os.path.split(cur_roi_files[0])[1][8:11]
     
-# rescale images
-print('Resizing images...')
-nonfat_ims = np.zeros((nonfat[0].shape[0],im_reshape[0],im_reshape[1],nonfat[0].shape[-1]))
-dyn_ims = np.zeros((dyn[0].shape[0],im_reshape[0],im_reshape[1],dyn[0].shape[-1]))
-for ii in range(nonfat_ims.shape[0]):
-    nonfat_ims[ii,...,0] = cv2.resize(nonfat[0][ii,:,:,0],im_reshape)
-    for cc in range(dyn_ims.shape[-1]):
-        dyn_ims[ii,...,cc] = cv2.resize(dyn[0][ii,:,:,cc],im_reshape)
+    # load in images and transform data
+    print('Loading images...')
+    nonfat,dyn = LoadImageData(subj_num)
+    if not np.array_equal(dyn[0].shape[:3],nonfat[0].shape[:3]):
+        if np.array_equal(dyn[1],nonfat[1]):
+            zoom_rat = dyn[0].shape[0]/nonfat[0].shape[0]
+            from scipy.ndimage import zoom
+            temp = zoom(nonfat[0][...,0], (zoom_rat, 1, 1))
+            nonfat[0] =  temp[...,np.newaxis]
+        else:
+            raise ValueError('Images are not aligned')
+        
+    # rescale images
+    print('Resizing images...')
+    nonfat_ims = np.zeros((nonfat[0].shape[0],im_reshape[0],im_reshape[1],nonfat[0].shape[-1]))
+    dyn_ims = np.zeros((dyn[0].shape[0],im_reshape[0],im_reshape[1],dyn[0].shape[-1]))
+    for ii in range(nonfat_ims.shape[0]):
+        nonfat_ims[ii,...,0] = cv2.resize(nonfat[0][ii,:,:,0],im_reshape)
+        for cc in range(dyn_ims.shape[-1]):
+            dyn_ims[ii,...,cc] = cv2.resize(dyn[0][ii,:,:,cc],im_reshape)
+        
+    # normalize and combine images
+    print('Normalizing images...')
+    for im in nonfat_ims:
+        im /= np.max(im)
+    for im in dyn_ims:
+        im /= np.max(im)
+    comb_ims = np.concatenate((nonfat_ims,dyn_ims),axis=-1)
     
-# normalize and combine images
-print('Normalizing images...')
-for im in nonfat_ims:
-    im /= np.max(im)
-for im in dyn_ims:
-    im /= np.max(im)
-comb_ims = np.concatenate((nonfat_ims,dyn_ims),axis=-1)
-
-print('Processing ROIs')
-coord_array = ProcessROIs(cur_roi_files,nonfat)
-
-print('Saving Data')
-#~ Loop over slices ~
-for ind in range(coord_array.shape[0]):
-    lbl_num = np.max(coord_array[ind,4::5])
-    if lbl_num==2:
-        lbl = 'M'
-    elif lbl_num==1:
-        lbl = 'B'
-    else:
-         lbl = 'N'
+    print('Processing ROIs')
+    coord_array = ProcessROIs(cur_roi_files,nonfat)
     
-    out_im_fn = output_image_path.format(cur_subj,lbl,ind)
-    out_lbl_fn = output_label_path.format(cur_subj,lbl,ind)
-    np.save(out_im_fn,comb_ims[ind])
-    np.savetxt(out_lbl_fn,coord_array[ind])
+    print('Saving Data')
+    #~ Loop over slices ~
+    for ind in range(coord_array.shape[0]):
+        lbl_num = np.max(coord_array[ind,4::5])
+        if lbl_num==2:
+            lbl = 'M'
+        elif lbl_num==1:
+            lbl = 'B'
+        else:
+             lbl = 'N'
+        
+        out_im_fn = output_image_path.format(cur_subj,lbl,ind)
+        out_lbl_fn = output_label_path.format(cur_subj,lbl,ind)
+        np.save(out_im_fn,comb_ims[ind])
+        np.savetxt(out_lbl_fn,coord_array[ind])
 
-MultiROIviewer(comb_ims[...,3],coord_array)
-# export to .hdf5 file
-#savepath = 'FormattedData.hdf5'
-#with h5py.File(savepath, 'w') as hf:
-#    hf.create_dataset("nonfat_images",  data=nonfat_ims, dtype='f')
+# from VisTools import MultiROIviewer
+# MultiROIviewer(comb_ims[...,3],coord_array)
+
