@@ -47,12 +47,23 @@ def BuildInceptionModel(input_shape):
     return model
 
 def YOLOloss(y_pred,y_true):
-    grid_shape = [9,9]
-#    batch_size = K.int_shape(y_true)[0]
-    cell_x = K.tf.to_float(K.reshape(K.tile(K.tf.range(grid_shape[0]), [grid_shape[1]]), (1, grid_shape[0], grid_shape[1], 1, 1)))
-    cell_y = K.transpose(cell_x, (0,2,1,3,4))
-    cell_grid = K.concatenate([cell_x,cell_y], -1)
+    # coordinate losses
+    pred_xy = K.sigmoid(y_pred[...,:2])
+    true_xy = K.sigmoid(y_true[...,:2])
+    pred_wh = K.exp(y_pred[...,2:4])
+    true_wh = K.exp(y_true[...,2:4])
+    coord_loss = K.mean(K.square(pred_xy-true_xy)+K.square(pred_wh-true_wh))
+    # object loss
+    pred_obj = K.sigmoid(y_pred[...,4])
+    true_obj = K.sigmoid(y_true[...,4])
+    obj_loss = K.sum(-(1-true_obj)*K.log(1-pred_obj)-true_obj*K.log(pred_obj))
+    # class loss
+    pred_class = y_pred[...,5:7]
+    true_class = y_true[...,5:7]
+    class_loss = K.categorical_crossentropy(true_class,pred_class,from_logits=True)
     
+    # weighted losses
+    loss = coord_loss + 5*obj_loss + class_loss
     
     return loss
     
