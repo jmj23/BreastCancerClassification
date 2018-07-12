@@ -11,12 +11,11 @@ import os
 
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
-    def __init__(self, list_IDs, labels, batch_size=32, dim=(256,256), 
+    def __init__(self, list_IDs, batch_size=32, dim=(256,256), 
                  n_channels=1, shuffle=True,grid_size=(18,18)):
         'Initialization'
         self.dim = dim
         self.batch_size = batch_size
-        self.labels = labels
         self.list_IDs = list_IDs
         self.n_channels = n_channels
         self.shuffle = shuffle
@@ -79,10 +78,8 @@ class DataGenerator(keras.utils.Sequence):
                     bw = cdat[2]-cdat[0]
                     bh = cdat[3]-cdat[1]
                     # calculate grid square width and height
-    #                gw = self.dim[0]/self.grid_size[0]
-    #                gh = self.dim[1]/self.grid_size[1]
-                    gw = dim[0]/grid_size[0]
-                    gh = dim[1]/grid_size[1]
+                    gw = self.dim[0]/self.grid_size[0]
+                    gh = self.dim[1]/self.grid_size[1]
                     # find grid square that contains center
                     xind = np.floor(bx/gw).astype(np.int)
                     yind = np.floor(by/gh).astype(np.int)
