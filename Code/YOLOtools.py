@@ -5,12 +5,14 @@ Created on Wed Jun 13 13:00:44 2018
 
 @author: jmj136
 """
+from matplotlib import pyplot as plt
+import numpy as np
+import keras
 from keras.models import Model
 from keras.applications.inception_v3 import InceptionV3
 from keras.layers import Input
-from keras.layers import Conv2D, concatenate
+from keras.layers import Conv2D
 from keras.layers import BatchNormalization, Conv2DTranspose
-from keras.layers import UpSampling2D, Reshape
 from keras.layers.advanced_activations import ELU
 import keras.backend as K
 
@@ -67,6 +69,28 @@ def YOLOloss(y_pred,y_true):
     
     return loss
     
+class Plots(keras.callbacks.Callback):
+    def on_train_begin(self, logs={}):
+        return
+
+    def on_epoch_end(self, epoch, logs={}):
+        test = np.reshape(self.test,np.r_[1,self.test.shape])
+        prd = self.model.predict(test,batch_size=1)
+    
+        self.imobj.set_data(prd[0,:,:,0])
+        plt.pause(.001)
+        plt.draw()
+        return
+    
+    def on_batch_end(self, batch, logs={}):
+#        self.losses.append(logs.get('loss'))
+#        prd = self.model.predict(self.test,batch_size=1)
+#    
+#        self.imobj.set_data(prd[0,:,:,0])
+#        plt.pause(.005)
+#        plt.draw()
+        return
+
 
 if __name__ == '__main__':
     testmodel = BuildInceptionModel((384,384,5))
