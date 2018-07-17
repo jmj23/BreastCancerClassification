@@ -8,6 +8,8 @@ Created on Thu Jul  5 15:51:29 2018
 import numpy as np
 import keras
 import os 
+import sys
+from YOLOtools import CoordsToTarget
 
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
@@ -55,64 +57,24 @@ class DataGenerator(keras.utils.Sequence):
         # Initialization
         X = np.empty((self.batch_size, *self.dim, self.n_channels))
         y = np.empty((self.batch_size, *self.grid_size, 7))
-
-        # Generate data
-        for i, ID in enumerate(list_IDs_temp):
-            # load image slice
-            im = np.load(self.data_path + ID + '.npy')
-            # load coordinates
-            coords = np.loadtxt(self.data_path + ID + '.txt')
-            # convert coordinates to YOLO
-            # preallocate
-            target = np.zeros((*self.grid_size,7))
-            # iterate over 4 possible ROIs
-            for r in [0,5,10,15]:
-                cdat = coords[r:r+5]
-                if np.any(cdat):
-                    # coordinates are in format:
-                    # [x1,y1,x2,y2,b/m]
-                    # calculate center coordinates
-                    bx = (cdat[2]+cdat[0])/2
-                    by = (cdat[3]+cdat[1])/2
-                    # calculate width and height
-                    bw = cdat[2]-cdat[0]
-                    bh = cdat[3]-cdat[1]
-                    # calculate grid square width and height
-                    gw = self.dim[0]/self.grid_size[0]
-                    gh = self.dim[1]/self.grid_size[1]
-                    # find grid square that contains center
-                    xind = np.floor(bx/gw).astype(np.int)
-                    yind = np.floor(by/gh).astype(np.int)
-                    # find offset from grid square
-                    cx = gw*xind
-                    cy = gh*yind
-                    # calculate relative offset within square
-                    ox = (bx-cx)/gw
-                    oy = (by-cy)/gh
-                    # calculate center logits
-                    tx = np.log(ox/(1-ox))
-                    ty = np.log(oy/(1-oy))
-                    # calculate height/width logits
-                    tw = np.log(bw/gw)
-                    th = np.log(bh/gh)
-                    # class assignment
-                    pb = np.int(cdat[4]==1)
-                    pm = np.int(cdat[4]==2)
-                    # combine into vector
-                    vec = [tx,ty,tw,th,1,pb,pm]
-                    # assign to target grid
-                    target[xind,yind,:] = vec
-            
-            # Store image in batch
-            X[i,] = im
-
-            # Store target in batch
-            y[i,] = target
+        try:
+            # Generate data
+            for i, ID in enumerate(list_IDs_temp):
+                # load image slice
+                im = np.load(self.data_path + ID + '.npy')
+                # load coordinates
+                coords = np.loadtxt(self.data_path + ID + '.txt')
+                # convert coordinates to YOLO
+                target = CoordsToTarget(coords,self.dim,self.grid_size)
+                
+                # Store image in batch
+                X[i,] = im
+    
+                # Store target in batch
+                y[i,] = target
+        except Exception as e:
+            print(e)
+            print('Error on line {}'.format(sys.exc_info()[-1].tb_lineno))
+            print(ID)
 
         return X, y
-    
-    def __get_input(self,filepath):
-        return np.load(filepath)
-    
-    def __get_target(self,filepath):
-        return np.loadtxt(filepath)

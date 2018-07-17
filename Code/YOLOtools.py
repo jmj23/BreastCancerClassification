@@ -68,6 +68,46 @@ def YOLOloss(y_pred,y_true):
     loss = coord_loss + 5*obj_loss + class_loss
     
     return loss
+
+def CoordsToTarget(coords,dim,grid_size):
+    target = np.zeros((*grid_size,7))
+    for r in [0,5,10,15]:
+        cdat = coords[r:r+5]
+        if np.any(cdat):
+            # coordinates are in format:
+            # [x1,y1,x2,y2,b/m]
+            # calculate center coordinates
+            bx = (cdat[2]+cdat[0])/2
+            by = (cdat[3]+cdat[1])/2
+            # calculate width and height
+            bw = cdat[2]-cdat[0]
+            bh = cdat[3]-cdat[1]
+            # calculate grid square width and height
+            gw = dim[0]/grid_size[0]
+            gh = dim[1]/grid_size[1]
+            # find grid square that contains center
+            xind = np.floor(bx/gw).astype(np.int)
+            yind = np.floor(by/gh).astype(np.int)
+            # find offset from grid square
+            cx = gw*xind
+            cy = gh*yind
+            # calculate relative offset within square
+            ox = (bx-cx)/gw
+            oy = (by-cy)/gh
+            # calculate center logits
+            tx = np.log(ox/(1-ox))
+            ty = np.log(oy/(1-oy))
+            # calculate height/width logits
+            tw = np.log(bw/gw)
+            th = np.log(bh/gh)
+            # class assignment
+            pb = np.int(cdat[4]==1)
+            pm = np.int(cdat[4]==2)
+            # combine into vector
+            vec = np.array([tx,ty,tw,th,1,pb,pm])
+            # assign to target grid
+            target[xind,yind,:] = vec
+    return target
     
 class Plots(keras.callbacks.Callback):
     def on_train_begin(self, logs={}):
