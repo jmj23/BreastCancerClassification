@@ -16,13 +16,14 @@ from keras.layers import BatchNormalization, Conv2DTranspose
 from keras.layers.advanced_activations import ELU
 import keras.backend as K
 
+#%%
 def BuildInceptionModel(input_shape):
     # get inception V3 network and weights
     base_model = InceptionV3(weights='imagenet', include_top=False,input_shape=(*input_shape[:2],3))
     
     # add extra layers to be fine-tuned for our network
     x = base_model.get_layer('mixed7').output
-    for f in [64,128]:
+    for f in [64,64,64,64]:
         x = Conv2D(f,(3,3),padding='valid')(x)
         x = BatchNormalization()(x)
         x = ELU()(x)
@@ -48,6 +49,7 @@ def BuildInceptionModel(input_shape):
     
     return model
 
+#%%
 def YOLOloss(y_pred,y_true):
     # coordinate losses
     pred_xy = K.sigmoid(y_pred[...,:2])
@@ -69,6 +71,7 @@ def YOLOloss(y_pred,y_true):
     
     return loss
 
+#%%
 def CoordsToTarget(coords,dim,grid_size):
     target = np.zeros((*grid_size,7))
     for r in [0,5,10,15]:
@@ -108,27 +111,94 @@ def CoordsToTarget(coords,dim,grid_size):
             # assign to target grid
             target[xind,yind,:] = vec
     return target
-    
-class Plots(keras.callbacks.Callback):
-    def on_train_begin(self, logs={}):
-        return
 
-    def on_epoch_end(self, epoch, logs={}):
-        test = np.reshape(self.test,np.r_[1,self.test.shape])
-        prd = self.model.predict(test,batch_size=1)
+#%%
+def CollectYOLO(targ,gw,gh,xi,yi):
+    # get center x and y
+    bx = gw / (1 + np.exp(-targ[0])) + xi*gw
+    by = gh / (1 + np.exp(-targ[1])) + yi*gh
+    # get width and height
+    bw = gw*np.exp(targ[2])
+    bh = gh*np.exp(targ[3])
+    # convert center to corner x,y
+    bx -= bw/2
+    by -= bh/2
+    # get class
+    malig = np.float(targ[6]>targ[5])
+    return bx,by,bw,bh,malig
+
+def TargetToCoords(target,im_dim,conf=.5):
+    # look for objects
+    (xinds,yinds) = np.where(target[...,4]>conf)
+    # get grid parameters
+    nx = target.shape[0]
+    ny = target.shape[1]
+    gw = im_dim[0]/nx
+    gh = im_dim[1]/ny
+    # loop over all objects detected
+    roi_dat = [CollectYOLO(target[xi,yi,:],gw,gh,xi,yi) for xi,yi in zip(xinds,yinds)]
+    return roi_dat
     
-        self.imobj.set_data(prd[0,:,:,0])
-        plt.pause(.001)
+    
+
+#%%
+import matplotlib.patches as patches
+class YOLOcallback(keras.callbacks.Callback):
+    
+    def __init__(self, image, model):
+        self.image = image
+        self.im = image[...,1]
+        self.model = model
+        
+    def ConvertYOLOtoCoords(self,target,imdim,conf):
+        # look for objects
+        (xinds,yinds) = np.where(target[...,4]>conf)
+        # get grid parameters
+        nx = target.shape[0]
+        ny = target.shape[1]
+        gw = imdim[0]/nx
+        gh = imdim[1]/ny
+        # loop over all objects detected
+        roi_dat = [CollectYOLO(target[xi,yi,:],gw,gh,xi,yi) for xi,yi in zip(xinds,yinds)]
+        return roi_dat
+    
+    def UpdatePatches(self,remove=True):
+        # get prediction on image
+        pred = self.model.predict(self.image[np.newaxis,...],batch_size=1)[0]
+        # get coordinates from YOLO target
+        roi_xywh = self.ConvertYOLOtoCoords(pred,self.image.shape,.5)
+        
+        # remove current patches
+        if remove:
+            for rect in self.rects:
+                rect.remove()
+        # create rectangle patches
+        self.rects = [patches.Rectangle((c[0],c[1]),c[2],c[3],
+                                   linewidth=1,
+                                   edgecolor='r' if c[4]==1 else 'g',
+                                   facecolor='none') for c in roi_xywh]
+        # Add the patches to the Axes
+        for rect in self.rects:
+            self.ax.add_patch(rect)
+        plt.pause(.01)
         plt.draw()
+        
+    def on_train_begin(self, logs={}):
+        fig, ax = plt.subplots()
+        self.ax = ax
+        self.ax.imshow(self.im,cmap='gray',
+                  vmin=np.min(self.im),
+                  vmax=np.max(self.im))
+        self.ax.set_axis_off()
+        # Create patches
+        self.UpdatePatches(False)
+    
+    def on_epoch_end(self, epoch, logs={}):
+        self.UpdatePatches(True)
         return
     
     def on_batch_end(self, batch, logs={}):
-#        self.losses.append(logs.get('loss'))
-#        prd = self.model.predict(self.test,batch_size=1)
-#    
-#        self.imobj.set_data(prd[0,:,:,0])
-#        plt.pause(.005)
-#        plt.draw()
+        self.UpdatePatches(True)
         return
 
 
