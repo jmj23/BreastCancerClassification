@@ -169,9 +169,9 @@ for sind in range(94,len(subjs)):
         
         out_im_fn = output_image_path.format(cur_subj,lbl,ind)
         out_lbl_fn = output_label_path.format(cur_subj,lbl,ind)
-        np.save(out_im_fn,comb_ims[ind])
-        np.savetxt(out_lbl_fn,coord_array[ind])
+#        np.save(out_im_fn,comb_ims[ind])
+#        np.savetxt(out_lbl_fn,coord_array[ind])
 
-# from VisTools import MultiROIviewer
-# MultiROIviewer(comb_ims[...,3],coord_array)
+from VisTools import MultiROIviewer
+MultiROIviewer(comb_ims[...,3],coord_array)
 
